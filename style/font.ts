@@ -1,0 +1,1 @@
+export const BIG = { base: '1rem', lg: '1.5rem' };
