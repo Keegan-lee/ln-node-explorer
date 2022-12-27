@@ -34,6 +34,7 @@ export const ChannelRow: React.FC<ChannelRowProps> = (props: ChannelRowProps) =>
         overflow='hidden'
         style={{ whiteSpace: 'nowrap' }}
         cursor='pointer'
+        _hover={{ textDecoration: 'underline', color: 'teal' }}
         onClick={() => router.push(`/${node2_pub}`)}
       >{node2_pub}</Td>
     </Tr>

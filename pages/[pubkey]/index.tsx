@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { NextPage } from 'next';
 import { Flex, Text, Divider, Table, TableContainer, Thead, Tbody, Tr, Th, Button } from '@chakra-ui/react';
 import { useLazyQuery } from '@apollo/client';
@@ -14,6 +14,7 @@ import { IChannel } from '../../components/common/types';
 import { satsToBTC } from '../../utils/btcConverstions';
 import { btcValueToString } from '../../utils/btcValueToString';
 import { BIG } from '../../style/font';
+import { isPubKey, IErrorReturn } from '../../utils/errorCheck';
 
 interface IStats {
   capacity: number;
@@ -22,21 +23,19 @@ interface IStats {
   avgBaseFee: string;
 };
 
+const defaultStats: IStats = {
+  numChannels: 0,
+  capacity: 0,
+  avgFeeMSats: '0',
+  avgBaseFee: '0'
+}
+
 const PubKey: NextPage = () => {
 
   const router = useRouter();
   const { pubkey } = router.query;
 
-  const [stats, setStats] = useState<IStats>({
-    numChannels: 0,
-    capacity: 0,
-    avgFeeMSats: '0',
-    avgBaseFee: '0'
-  });
-
-  const [channelPagination, setChannelPagination] = useState({ offset: 0, limit: 10 });
-
-  const [currentUnit, setCurrentUnit] = useState(UNITS.Bitcoin);
+  const [pubKeyError, setPubkeyError] = useState<IErrorReturn>({ success: true });
 
   const [pagination, { loading, error, data }] = useLazyQuery(PAGINATION,
     {
@@ -50,17 +49,19 @@ const PubKey: NextPage = () => {
   );
 
   useEffect(() => {
-    if (pubkey !== null) {
-      pagination();
+    if (pubkey !== null && pubkey !== undefined) {
+      let pubKeyCheck: IErrorReturn = isPubKey(pubkey as string);
+      if (pubKeyCheck.success === true) {
+        pagination();
+      } else {
+        setPubkeyError(pubKeyCheck);
+      }
     }
   }, [pubkey]);
 
-  useEffect(() => {
-    if (data === undefined) return;
-    calculateStats();
-  }, [data])
+  const stats: IStats = useMemo(() => {
+    if (data === undefined) return defaultStats;
 
-  const calculateStats = () => {
     let capacity: number = 0; // Stored in BTC
     let avgFeeMSats: number = 0; // Stored in Sats
     let avgBaseFee: number = 0;
@@ -69,21 +70,24 @@ const PubKey: NextPage = () => {
 
     data.getNode.graph_info.channels.channel_list.list.map((channel: IChannel, index: number) => {
       capacity = satsToBTC(parseInt(channel.capacity)) + capacity;
-      avgFeeMSats += parseFloat(channel.node1_policy.fee_rate_milli_msat);
-      avgBaseFee += parseFloat(channel.node1_policy.fee_base_msat);
+      avgFeeMSats += parseFloat(channel.node1_policy?.fee_rate_milli_msat) || 0;
+      avgBaseFee += parseFloat(channel.node1_policy?.fee_base_msat) || 0;
     });
 
     avgFeeMSats /= numChannels;
     avgBaseFee /= numChannels;
 
-    setStats({
-      ...stats,
+    return {
       numChannels,
       avgFeeMSats: (avgFeeMSats / 1000).toFixed(4),
       avgBaseFee: (avgBaseFee / 1000).toFixed(0),
       capacity
-    });
-  }
+    };
+  }, [data]);
+
+  const [channelPagination, setChannelPagination] = useState({ offset: 0, limit: 10 });
+
+  const [currentUnit, setCurrentUnit] = useState(UNITS.Bitcoin);
 
   const channelPageBack = () => {
     const { offset, limit } = channelPagination;
@@ -100,11 +104,9 @@ const PubKey: NextPage = () => {
     setChannelPagination({ ...channelPagination, offset: newOffset })
   }
 
-  if (loading || data === undefined) return <Loading />;
+  if (loading) return <Loading />;
+  if (pubKeyError.success === false) return <Flex h='100vh' alignItems='center' direction='row' textAlign='center' justifyContent='center'>{pubKeyError.message}</Flex>
   if (error) return <Flex direction='row' textAlign='center' justifyContent='center'>Error : {error.message}</Flex>;
-
-  console.log(data);
-
   return (
     <GlobalLayout title='Node'>
       {
@@ -161,7 +163,6 @@ const PubKey: NextPage = () => {
 
             <Flex p='1rem 0 0 1rem' flex='2' wrap='wrap'>
               <Text mb='1rem' fontSize='24px' w='100%'>Node Channels ({channelPagination.offset} - {channelPagination.offset + channelPagination.limit})</Text>
-
               <TableContainer shadow='lg'>
                 <Table variant='striped'>
                   <Thead>
@@ -190,11 +191,6 @@ const PubKey: NextPage = () => {
 
               </TableContainer>
             </Flex>
-          </Flex>
-
-          <Flex mt='2rem' direction='row' wrap='wrap'>
-
-
           </Flex>
         </Flex>
       }
